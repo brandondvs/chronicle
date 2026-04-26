@@ -4,11 +4,92 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
 )
+
+type TableSchema struct {
+	TableID uint64
+	Schema  string
+	Name    string
+
+	Columns []*Column
+}
+
+type Column struct {
+	Name     string
+	TypeName string
+}
+
+func parseTableMapEvent(event *replication.TableMapEvent) {
+	schema := &TableSchema{
+		TableID: event.TableID,
+		Schema:  string(event.Schema),
+		Name:    string(event.Table),
+
+		Columns: make([]*Column, 0),
+	}
+
+	for i, typeCode := range event.ColumnType {
+		column := &Column{
+			Name:     string(event.ColumnName[i]),
+			TypeName: mysqlToTypeName(typeCode),
+		}
+		schema.Columns = append(schema.Columns, column)
+	}
+
+	fmt.Printf("Database: %s, Table %s(ID=%d)\n", schema.Schema, schema.Name, schema.TableID)
+	fmt.Println("Column Schema:")
+	for _, column := range schema.Columns {
+		fmt.Printf("%s - %s\n", column.Name, column.TypeName)
+	}
+}
+
+func mysqlToTypeName(t byte) string {
+	switch t {
+	case mysql.MYSQL_TYPE_TINY:
+		return "TINYINT"
+	case mysql.MYSQL_TYPE_SHORT:
+		return "SMALLINT"
+	case mysql.MYSQL_TYPE_LONG:
+		return "INT"
+	case mysql.MYSQL_TYPE_LONGLONG:
+		return "BIGINT"
+	case mysql.MYSQL_TYPE_FLOAT:
+		return "FLOAT"
+	case mysql.MYSQL_TYPE_DOUBLE:
+		return "DOUBLE"
+	case mysql.MYSQL_TYPE_NEWDECIMAL:
+		return "DECIMAL"
+	case mysql.MYSQL_TYPE_VARCHAR, mysql.MYSQL_TYPE_VAR_STRING:
+		return "VARCHAR"
+	case mysql.MYSQL_TYPE_STRING:
+		return "CHAR"
+	case mysql.MYSQL_TYPE_BLOB:
+		return "BLOB/TEXT"
+	case mysql.MYSQL_TYPE_JSON:
+		return "JSON"
+	case mysql.MYSQL_TYPE_DATE:
+		return "DATE"
+	case mysql.MYSQL_TYPE_TIME, mysql.MYSQL_TYPE_TIME2:
+		return "TIME"
+	case mysql.MYSQL_TYPE_DATETIME, mysql.MYSQL_TYPE_DATETIME2:
+		return "DATETIME"
+	case mysql.MYSQL_TYPE_TIMESTAMP, mysql.MYSQL_TYPE_TIMESTAMP2:
+		return "TIMESTAMP"
+	case mysql.MYSQL_TYPE_ENUM:
+		return "ENUM"
+	case mysql.MYSQL_TYPE_SET:
+		return "SET"
+	case mysql.MYSQL_TYPE_BIT:
+		return "BIT"
+	case mysql.MYSQL_TYPE_YEAR:
+		return "YEAR"
+	default:
+		return fmt.Sprintf("UNKNOWN(%d)", t)
+	}
+}
 
 func main() {
 	cfg := replication.BinlogSyncerConfig{
@@ -39,6 +120,9 @@ func main() {
 			continue
 		}
 
-		ev.Dump(os.Stdout)
+		switch event := ev.Event.(type) {
+		case *replication.TableMapEvent:
+			parseTableMapEvent(event)
+		}
 	}
 }
