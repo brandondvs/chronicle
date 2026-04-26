@@ -1,6 +1,6 @@
 # Chronicle
 
-Chronicle is a Go binary that connects to MySQL replication and sends the replication events to Kafka. It is intented to be a simple and lightweight Change Data Capture (CDC) pipeline.
+Chronicle is a Go binary that connects to MySQL replication and sends the replication events to Kafka. It is intended to be a simple and lightweight Change Data Capture (CDC) pipeline.
 
 
 # Development
