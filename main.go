@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 
@@ -10,16 +11,16 @@ import (
 )
 
 type TableSchema struct {
-	TableID uint64
-	Schema  string
-	Name    string
+	TableID uint64 `json:"table_id"`
+	Schema  string `json:"schema"`
+	Name    string `json:"name"`
 
-	Columns []*Column
+	Columns []*Column `json:"columns"`
 }
 
 type Column struct {
-	Name     string
-	TypeName string
+	Name     string `json:"name"`
+	TypeName string `json:"type_name"`
 }
 
 func parseTableMapEvent(event *replication.TableMapEvent) {
@@ -39,11 +40,12 @@ func parseTableMapEvent(event *replication.TableMapEvent) {
 		schema.Columns = append(schema.Columns, column)
 	}
 
-	fmt.Printf("Database: %s, Table %s(ID=%d)\n", schema.Schema, schema.Name, schema.TableID)
-	fmt.Println("Column Schema:")
-	for _, column := range schema.Columns {
-		fmt.Printf("%s - %s\n", column.Name, column.TypeName)
+	data, err := json.Marshal(schema)
+	if err != nil {
+		fmt.Println("Failed to parse json", err)
 	}
+
+	fmt.Println(string(data))
 }
 
 func mysqlToTypeName(t byte) string {
@@ -123,6 +125,11 @@ func main() {
 		switch event := ev.Event.(type) {
 		case *replication.TableMapEvent:
 			parseTableMapEvent(event)
+
+		case *replication.RowsEvent:
+			for _, row := range event.Rows {
+				fmt.Println("Row: ", row)
+			}
 		}
 	}
 }
