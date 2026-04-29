@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
+	"github.com/segmentio/kafka-go"
 )
 
 type TableSchema struct {
@@ -23,7 +24,7 @@ type Column struct {
 	TypeName string `json:"type_name"`
 }
 
-func parseTableMapEvent(event *replication.TableMapEvent) {
+func parseTableMapEvent(event *replication.TableMapEvent) *TableSchema {
 	schema := &TableSchema{
 		TableID: event.TableID,
 		Schema:  string(event.Schema),
@@ -40,12 +41,7 @@ func parseTableMapEvent(event *replication.TableMapEvent) {
 		schema.Columns = append(schema.Columns, column)
 	}
 
-	data, err := json.Marshal(schema)
-	if err != nil {
-		fmt.Println("Failed to parse json", err)
-	}
-
-	fmt.Println(string(data))
+	return schema
 }
 
 func mysqlToTypeName(t byte) string {
@@ -93,6 +89,18 @@ func mysqlToTypeName(t byte) string {
 	}
 }
 
+func createKafkaWriter() *kafka.Writer {
+	return &kafka.Writer{
+		Addr:         kafka.TCP("localhost:9092"),
+		Topic:        "chronicle",
+		Balancer:     &kafka.Hash{},
+		Async:        true,
+		RequiredAcks: kafka.RequireAll,
+		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  10 * time.Second,
+	}
+}
+
 func main() {
 	cfg := replication.BinlogSyncerConfig{
 		ServerID: 1,
@@ -115,6 +123,11 @@ func main() {
 		log.Fatalln("Failed to start GTID streamer", err)
 	}
 
+	kafkaWriter := createKafkaWriter()
+	defer kafkaWriter.Close()
+
+	var tableSchemaCache map[uint64]*TableSchema = make(map[uint64]*TableSchema)
+
 	for {
 		ev, err := streamer.GetEvent(context.Background())
 		if err != nil {
@@ -124,11 +137,23 @@ func main() {
 
 		switch event := ev.Event.(type) {
 		case *replication.TableMapEvent:
-			parseTableMapEvent(event)
+			schema := parseTableMapEvent(event)
+			tableSchemaCache[schema.TableID] = schema
 
 		case *replication.RowsEvent:
+			schema, ok := tableSchemaCache[event.TableID]
+			if !ok {
+				fmt.Printf("TableID (%d) is missing from the table schema cache", event.TableID)
+			}
+
 			for _, row := range event.Rows {
-				fmt.Println("Row: ", row)
+				for i, column := range schema.Columns {
+					data := fmt.Sprintf("%s (%s) -> %v\n", column.Name, column.TypeName, row[i])
+					msg := kafka.Message{Value: []byte(data)}
+					if err := kafkaWriter.WriteMessages(context.Background(), msg); err != nil {
+						fmt.Println("Failed to write kafka message", err)
+					}
+				}
 			}
 		}
 	}
