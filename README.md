@@ -24,3 +24,22 @@ SHOW BINARY LOG STATUS
 ```
 
 Note the value stored in the column: `Executed_Gtid_Set`.
+
+
+```
+Chronicle is simple CDC application for sending MySQL events to Kafka
+
+Usage:
+  chronicle [flags]
+  chronicle [command]
+
+Available Commands:
+  completion  Generate the autocompletion script for the specified shell
+  help        Help about any command
+  start       Connect to MySQL and start reading replication log events
+
+Flags:
+  -h, --help   help for chronicle
+
+Use "chronicle [command] --help" for more information about a command.
+```
