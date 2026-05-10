@@ -4,7 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
+	"strconv"
 	"time"
+
+	"github.com/brandondvs/chronicle/internal/config"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
@@ -109,9 +113,11 @@ func mysqlToTypeName(t byte) string {
 	}
 }
 
-func createKafkaWriter() *kafka.Writer {
+func createKafkaWriter(cfg *config.Config) *kafka.Writer {
+	port := strconv.Itoa(int(cfg.GetKafkaPort()))
+	addr := kafka.TCP(net.JoinHostPort(cfg.GetKafkaHost(), port))
 	return &kafka.Writer{
-		Addr:         kafka.TCP("localhost:9092"),
+		Addr:         addr,
 		Topic:        "chronicle",
 		Balancer:     &kafka.Hash{},
 		Async:        true,
@@ -122,16 +128,21 @@ func createKafkaWriter() *kafka.Writer {
 }
 
 func startCmdMain() {
-	cfg := replication.BinlogSyncerConfig{
-		ServerID: 1,
-		Flavor:   "mysql",
-		Host:     "127.0.0.1",
-		Port:     3306,
-		User:     "chronicle",
-		Password: "chroniclepw",
+	cfg, err := config.New()
+	if err != nil {
+		log.Fatalln(err)
 	}
 
-	syncer := replication.NewBinlogSyncer(cfg)
+	binCfg := replication.BinlogSyncerConfig{
+		ServerID: uint32(cfg.GetMySQLServerID()),
+		Flavor:   "mysql",
+		Host:     cfg.GetMySQLHost(),
+		Port:     uint16(cfg.GetMySQLPort()),
+		User:     cfg.GetMySQLUser(),
+		Password: cfg.GetMySQLPassword(),
+	}
+
+	syncer := replication.NewBinlogSyncer(binCfg)
 
 	gtidSet, err := mysql.ParseGTIDSet(mysql.MySQLFlavor, gtidFlag)
 	if err != nil {
@@ -143,7 +154,7 @@ func startCmdMain() {
 		log.Fatalln("Failed to start GTID streamer", err)
 	}
 
-	kafkaWriter := createKafkaWriter()
+	kafkaWriter := createKafkaWriter(cfg)
 	defer kafkaWriter.Close()
 
 	var tableSchemaCache map[uint64]*TableSchema = make(map[uint64]*TableSchema)

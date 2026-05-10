@@ -1,0 +1,10 @@
+mysql:
+  serverID: 1
+  host: 127.0.0.1
+  port: 3306
+  user: chronicle
+  password: chroniclepw
+
+kafka:
+  host: localhost
+  port: 9092
